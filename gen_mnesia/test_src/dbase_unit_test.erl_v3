@@ -1,0 +1,61 @@
+%%% -------------------------------------------------------------------
+%%% @author  : Joq Erlang
+%%% @doc : represent a logical vm  
+%%% 
+%%% Supports the system with standard erlang vm functionality, load and start
+%%% of an erlang application (downloaded from git hub) and "dns" support 
+%%% 
+%%% Make and start the board start SW.
+%%%  boot_service initiates tcp_server and l0isten on port
+%%%  Then it's standby and waits for controller to detect the board and start to load applications
+%%% 
+%%%     
+%%% -------------------------------------------------------------------
+-module(dbase_unit_test). 
+
+%% --------------------------------------------------------------------
+%% Include files
+%% --------------------------------------------------------------------
+-include("test_src/db_passwd.hrl").
+%% --------------------------------------------------------------------
+-include_lib("eunit/include/eunit.hrl").
+%% --------------------------------------------------------------------
+%% Key Data structures
+%% 
+%% --------------------------------------------------------------------
+	  
+%% --------------------------------------------------------------------
+
+%% ====================================================================
+%% External functions
+%% ====================================================================
+%% --------------------------------------------------------------------
+%% 
+%% 
+%% --------------------------------------------------------------------
+start_mnesia_test()->	  
+    mnesia:stop(),
+    mnesia:delete_schema([node()]),
+    mnesia:start(),
+    ok.
+create_table_test()->
+    Table=passwd,
+    Arg=[{attributes, record_info(fields, passwd)}],
+    {atomic,ok}=mnesia:create_table(Table,Args),
+    Tables=mnesia:system_info(tables),
+    mnesia:wait_for_tables(Tables,?WAIT_FOR_TABLES),
+    ok.
+
+init_test()->
+    MnesiaConfig=[{passwd,[{attributes, record_info(fields, passwd)}
+			  %,{disc_copies,[node()]}
+			  ]}],
+    ok=gen_mnesia_lib:start([],MnesiaConfig),
+    ok.
+passwd_test()->
+    ?assertEqual({atomic,ok},db_passwd:create("David",david1)),
+    ?assertEqual({atomic,ok},db_passwd:create("David",david2)),
+    ?assertEqual({atomic,ok},db_passwd:create("Joq",joq1)),
+    ?assertEqual([{"Joq",joq1},{"David",david2}],db_passwd:read_all()),    
+    ok.
+
