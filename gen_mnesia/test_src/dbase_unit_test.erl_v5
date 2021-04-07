@@ -18,7 +18,7 @@
 %% --------------------------------------------------------------------
 -include("test_src/db_passwd.hrl").
 -include("test_src/db_shop.hrl").
--include("src/db_lock.hrl").
+-include("src/db_gen_mnesia.hrl").
 %% --------------------------------------------------------------------
 -include_lib("eunit/include/eunit.hrl").
 %% --------------------------------------------------------------------
@@ -27,17 +27,10 @@
 %% --------------------------------------------------------------------
 -define(WAIT_FOR_TABLES,10000).	  
 %% --------------------------------------------------------------------
--export([node_name/1]).
 
 %% ====================================================================
 %% External functions
 %% ====================================================================
-node_name(Name)->
-    {ok,Host}=inet:gethostname(),
-    Node=list_to_atom(Name++"@"++Host),    
-    Node.
-
-
 %% --------------------------------------------------------------------
 %% 
 %% 
@@ -54,23 +47,13 @@ clean_start_test()->
     ok.
 start_mnesia_test()->	  
     ?assertEqual(ok,application:start(gen_mnesia)),
-  %  ?assertEqual([leader],db_lock:read_all()),
  %   ok=db_gen_mnesia:create_table(),
     ok.
 
-create_table_lock_test()->
-%    db_lock:create_table(),
- %   ?assertEqual({atomic,ok},db_lock:create()),
-  %  ?assertEqual([leader],db_lock:read_all()),
-  %  ?assertEqual(true,db_lock:is_open()),
-   % ?assertEqual(false,db_lock:is_open()),
-    ok.
 create_table_passwd_test()->
     Table=passwd,
     Args=[{attributes, record_info(fields, passwd)}],
     ?assertEqual(ok,gen_mnesia:create_table(Table,Args)),
-
-    
     ok.
 
 %init_test()->
@@ -83,7 +66,6 @@ passwd_test()->
     ?assertEqual({atomic,ok},db_passwd:create("David",david1)),
     ?assertEqual({atomic,ok},db_passwd:create("David",david2)),
     ?assertEqual({atomic,ok},db_passwd:create("Joq",joq1)),
-       ?assertEqual([{"Joq",joq1}],db_passwd:read("Joq")),  
     ?assertEqual([{"Joq",joq1},{"David",david2}],db_passwd:read_all()),    
     ok.
 
@@ -111,10 +93,6 @@ shop_test()->
 %%% Distributed mnesia 
 start_nodes_to_add_test()->
     {ok,Host}=inet:gethostname(),
-
-
-
-
     NodeA=list_to_atom("a@"++Host),
     NodeB=list_to_atom("b@"++Host),
     ?assertEqual({ok,NodeA},slave:start(Host,a,"-pa ebin -pa test_ebin -setcookie abc")),
@@ -162,21 +140,12 @@ stop_restart_node_test()->
     ?assertMatch({badrpc,_},rpc:call(NodeA,db_passwd,read_all,[])),
 
     ?assertEqual({ok,NodeA},slave:start(Host,a,"-pa ebin -pa test_ebin -setcookie abc")),  
-    timer:sleep(50), 
-    ?assertEqual([],gen_mnesia_lib:check_stopped_db_nodes()),
-    slave:stop(NodeA),
-    slave:stop(NodeB),
-    timer:sleep(50), 
-    ?assertEqual([NodeB,NodeA],gen_mnesia_lib:check_stopped_db_nodes()), 
-
-    ?assertEqual({ok,NodeA},slave:start(Host,a,"-pa ebin -pa test_ebin -setcookie abc")),  
-    ?assertEqual({ok,NodeB},slave:start(Host,b,"-pa ebin -pa test_ebin -setcookie abc")), 
-    timer:sleep(10), 
-    ?assertEqual([],gen_mnesia_lib:check_stopped_db_nodes()),
+    ?assertMatch(ok,rpc:call(NodeA,application,start,[gen_mnesia])),
+    rpc:call(NodeB,mnesia,change_config,[extra_db_nodes,[NodeA]]),
+    timer:sleep(50),
     ?assertEqual([{"Joq",joq1},
 		  {"Erika",123},
 		 {"David",david2}],rpc:call(NodeA,db_passwd,read_all,[])),
-    ?assertEqual([{"Joq",joq1}],rpc:call(NodeB,db_passwd,read,["Joq"])),
     ok.
 
 some_test_xx()->

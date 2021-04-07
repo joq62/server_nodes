@@ -17,7 +17,9 @@
 -export([initial_start/0,
 	 create_table/2,
 	 initiate_added_node/1,
-	 add_table/3
+	 add_table/3,
+	 check_stopped_db_nodes/0,
+	 create_lock/0
 	]).
 
 -define(WAIT_FOR_TABLES,5000).
@@ -25,7 +27,12 @@
 %% ====================================================================
 %% External functions
 %% ====================================================================
-
+create_lock()->
+    timer:sleep(10),
+    db_lock:create_table(),
+    {atomic,ok}=db_lock:create(),
+    [leader]=db_lock:read_all(),
+    ok.
 %% --------------------------------------------------------------------
 %% Function:start
 %% Description: List of test cases 
@@ -43,8 +50,33 @@ initial_start()->
 %% Returns: non
 %% --------------------------------------------------------------------
 
+check_stopped_db_nodes()->
+    case get_stopped_nodes() of
+	[]->
+	    ok;
+	StoppedExtraDbNodes->
+	    add_started_nodes(StoppedExtraDbNodes)
+    end,
+    get_stopped_nodes().
+
+
+add_started_nodes([])->
+    ok;
+add_started_nodes([Vm|T])->
+    initiate_added_node(Vm),
+    timer:sleep(100),
+    add_started_nodes(T).
+	    
+get_stopped_nodes()->
+    ExtraDbNodes=mnesia:system_info(extra_db_nodes),
+    RunningExtraDbNodes=lists:delete(node(),mnesia:system_info(running_db_nodes)),
+    StoppedExtraDbNodes=[Node||Node<-ExtraDbNodes,
+			     false==lists:member(Node,RunningExtraDbNodes)],
+    StoppedExtraDbNodes.
+
+
 create_table(Table,Args)->
-     {atomic,ok}=mnesia:create_table(Table,Args),
+    {atomic,ok}=mnesia:create_table(Table,Args),
     Tables=mnesia:system_info(tables),
     mnesia:wait_for_tables(Tables,?WAIT_FOR_TABLES).
 
@@ -74,7 +106,8 @@ initiate_added_node(Vm)->
 %% --------------------------------------------------------------------
 
 add_table(Vm,Table,StorageType)->
-    mnesia:add_table_copy(Table, Vm,StorageType),
+    mnesia:add_table_copy(Table,Vm,StorageType),
+  %  [{Table,Args,_}]=db_gen_mnesia:read(Table),
     Tables=mnesia:system_info(tables),
     mnesia:wait_for_tables(Tables,?WAIT_FOR_TABLES).
     

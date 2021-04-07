@@ -17,16 +17,15 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
-%-include("infra.hrl").
+%
 %% --------------------------------------------------------------------
-
+-define(check_started_extra_node_time_out,10000).
 %% --------------------------------------------------------------------
 %% Key Data structures
 %% 
 %% --------------------------------------------------------------------
 -record(state,{}).
 
-	  
 %% --------------------------------------------------------------------
 
 %% ====================================================================
@@ -41,6 +40,7 @@
 	 add_table/3,
 	 create_table/2,
 	 sys_info/0,
+	 check_started_extra_node/0,
 	 glurk/0]).
 
 -export([init_table_info/1,
@@ -111,7 +111,8 @@ ping()->
 
 %%___________________________________________________________________
 
-
+check_started_extra_node()->
+    gen_server:cast(?MODULE,{check_started_extra_node}).
 
 %%-----------------------------------------------------------------------
 
@@ -133,6 +134,10 @@ init([]) ->
     mnesia:stop(),
     mnesia:delete_schema([node()]),
     mnesia:start(),
+   % ok=db_lock:create_table(),
+   % {atomic,ok}=db_lock:create(),
+    spawn(fun()->local_check_started_extra_node() end),
+    spawn(fun()->gen_mnesia_lib:create_lock() end),
     {ok, #state{}}.
 
 %% --------------------------------------------------------------------
@@ -172,7 +177,7 @@ handle_call({add_node,Vm}, _From, State) ->
     Reply=case net_adm:ping(Vm) of
 	      pong->
 		  rpc:call(Vm,application,stop,[gen_mnesia]),
-		  ok=mnesia:delete_schema([Vm]),
+		  ok=rpc:call(Vm,mnesia,delete_schema,[[Vm]]),
 		  case rpc:call(Vm,application,start,[gen_mnesia]) of
 		      ok->
 			  case mnesia:change_config(extra_db_nodes, [Vm]) of
@@ -226,8 +231,8 @@ handle_call(Request, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 
-handle_cast({glurk}, State) ->
-
+handle_cast({check_started_extra_node}, State) ->
+    spawn(fun()->local_check_started_extra_node() end),  
     {noreply, State};
 
 handle_cast(Msg, State) ->
@@ -279,3 +284,14 @@ code_change(_OldVsn, State, _Extra) ->
 %% --------------------------------------------------------------------
 %% Internal functions
 %% --------------------------------------------------------------------
+local_check_started_extra_node()->
+    timer:sleep(?check_started_extra_node_time_out),
+    Locked=db_lock:is_open(),
+    io:format("~p~n",[{?MODULE,?FUNCTION_NAME,?LINE,Locked}]),
+    case Locked of
+	false->
+	    do_nothing;
+	true->
+	    rpc:call(node(),gen_mnesia_lib,check_stopped_db_nodes,[])
+    end,
+    gen_mnesia:check_started_extra_node().
